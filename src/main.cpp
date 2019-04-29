@@ -5,46 +5,44 @@
 #define hipDeviceFree hipFree
 
 template<typename EC>
-void check(EC error, const char* file, const char* fun, int line){
+void check(EC error, const char* file, const char* fun, int line, const char* call_str){
 
 }
 
 template<>
-void check(hipError_t error, const char* file, const char* fun, int line){
+void check(hipError_t error, const char* file, const char* fun, int line, const char* call_str){
         if (error != hipSuccess){
-                printf("[!] %s/%s:%d %s %s\n",
+                printf("[!] %s/%s:%d %s %s %s\n",
                         file,
                         fun,
                         line,
                         hipGetErrorName(error),
-                        hipGetErrorString(error)
+                        hipGetErrorString(error),
+			call_str
                 );
         } else {
-		printf("[s] %s/%s:%d\n", file, fun, line);
+		printf("[s] %s/%s:%d %s\n", file, fun, line, call_str);
 	};
 }
 
 template<>
-void check(miopenStatus_t error, const char* file, const char* fun, int line){
+void check(miopenStatus_t error, const char* file, const char* fun, int line, const char* call_str){
 	if (error != miopenStatusSuccess){
-		printf("[!] %s/%s:%d %d\n",
+		printf("[!] %s/%s:%d %d %s\n",
 			file,
 			fun,
 			line,
-			error
+			error,
+			call_str
 		);
 	} else{
-		printf("[s] %s/%s:%d\n", file, fun, line);
+		printf("[s] %s/%s:%d %s\n", file, fun, line, call_str);
 	}
 }
 
-//template<>
-//void check(int i){
-//}
+#define CHK(X) check(X, __FILE__, __func__, __LINE__, #X)
 
-
-
-#define CHK(X) check(X, __FILE__, __func__, __LINE__)
+void print_tensor(float* tensor, miopenTensorDescriptor_t desc, int batch_id);
 
 int main(){
 	// Runtime
@@ -52,7 +50,7 @@ int main(){
 	CHK(hipGetDeviceCount(&device_count));
 	
 	printf("Device Count: %d\n", device_count);
-	auto hip_status = hipSetDevice(0);
+	CHK(hipSetDevice(0));
 	
 	int w = 8;
 	int h = 8;
@@ -77,20 +75,20 @@ int main(){
 
 	// Create a MIOpen Handle
 	miopenHandle_t handle;
-	auto mi_status = miopenCreate(&handle);
+	CHK(miopenCreate(&handle));
 
 	miopenTensorDescriptor_t desc_x;
-	mi_status = miopenCreateTensorDescriptor(&desc_x);
-	mi_status = miopenSet4dTensorDescriptor(desc_x, miopenFloat, 32, 3, w, h);
+	CHK(miopenCreateTensorDescriptor(&desc_x));
+	CHK(miopenSet4dTensorDescriptor(desc_x, miopenFloat, 32, 3, w, h));
 
 	miopenTensorDescriptor_t desc_k;
-	mi_status = miopenCreateTensorDescriptor(&desc_k);
+	CHK(miopenCreateTensorDescriptor(&desc_k));
 	// Output channel becomes the batch_size        
-	int out_channel = 32;
-	mi_status = miopenSet4dTensorDescriptor(desc_k, miopenFloat, out_channel, 3, 3, 3);
+	int out_channel = 4;
+	CHK(miopenSet4dTensorDescriptor(desc_k, miopenFloat, out_channel, 3, 3, 3));
 
 	// Copy Host to Device
-	hip_status = hipMemcpyHtoD(tensor_dx, tensor_hx, size_x);
+	CHK(hipMemcpyHtoD(tensor_dx, tensor_hx, size_x));
 	
 	// >> Play Ground
 	// >>>>>>>>>>>>>>
@@ -98,6 +96,7 @@ int main(){
 	// Set tensor value to 1
 	float value = 1;
 	CHK(miopenSetTensor(handle, desc_x, tensor_dx, &value));	
+	CHK(miopenSetTensor(handle, desc_k, kernel_dk, &value));
 
 	// Make a convolution
 	miopenConvolutionDescriptor_t convDesc;
@@ -160,8 +159,31 @@ int main(){
 		&perf,
 		&workspace,
 		workspace_size,
-		false
+		true
 	));
+	// Given the best convolution algo allocate workspace
+	workspace_size = perf.memory;
+
+	printf("Workspace Size %zu\n", workspace_size);
+	CHK(hipDeviceFree(workspace));
+        CHK(hipDeviceMalloc(&workspace, workspace_size));
+
+	printf("Picked Algo %d\n", perf.fwd_algo);
+	
+	// Execute the convolution at last
+	float alpha = 1;
+	float beta = 0;
+	CHK(miopenConvolutionForward(
+		handle,
+		&alpha,
+		desc_x, tensor_dx,
+		desc_k, kernel_dk,
+		convDesc,
+		perf.fwd_algo,
+		&beta,
+		desc_o, output_do,
+		workspace, workspace_size
+	));	
 
 
 	// <<<<<<<<<<<<<
@@ -181,19 +203,56 @@ int main(){
 		}
 		printf("\n");
 	}
-	
-	mi_status = miopenDestroyTensorDescriptor(desc_x);
-	mi_status = miopenDestroyTensorDescriptor(desc_o);
-	mi_status = miopenDestroyTensorDescriptor(desc_k);
 
-	mi_status = miopenDestroy(handle);
+	CHK(hipMemcpyDtoH(output_ho, output_do, size_o));
+
+	print_tensor(output_ho, desc_o, 0);
 	
-	hip_status = hipHostFree(tensor_hx);
-	hip_status = hipHostFree(kernel_hk);
-	hip_status = hipHostFree(output_ho);
+	CHK(miopenDestroyTensorDescriptor(desc_x));
+	CHK(miopenDestroyTensorDescriptor(desc_o));
+	CHK(miopenDestroyTensorDescriptor(desc_k));
+
+	CHK(miopenDestroy(handle));
 	
-	hip_status = hipDeviceFree(tensor_dx);
-	hip_status = hipDeviceFree(kernel_dk);
-	hip_status = hipDeviceFree(output_do);
+	CHK(hipHostFree(tensor_hx));
+	CHK(hipHostFree(kernel_hk));
+	CHK(hipHostFree(output_ho));
+	
+	CHK(hipDeviceFree(tensor_dx));
+	CHK(hipDeviceFree(kernel_dk));
+	CHK(hipDeviceFree(output_do));
+
 	return 0;
 }
+
+
+void print_tensor(float* tensor, miopenTensorDescriptor_t desc, int batch_id){
+	miopenDataType_t dtype;
+	int n, c, h, w, ns, cs, hs, ws;
+	CHK(miopenGet4dTensorDescriptor(
+		desc,
+		&dtype,
+		&n , &c , &h , &w,
+		&ns, &cs, &hs, &ws
+	));
+
+	printf("Tensor: Size(%d, %d, %d, %d) Strides(%d, %d, %d, %d)\n", 
+	       n, c, h, w, ns, cs, hs, ws);
+
+	size_t color_size = w * h;
+	size_t img_size = color_size * c;
+	
+	for (int row = 0; row < h; row += 1){
+		for (int col = 0; col < w; col += 1){
+			printf("[");
+			for (int channel = 0; channel < c; channel += 1){
+				size_t offset = col * ws + row * hs + channel * cs + batch_id * ns;
+				printf("%.f ", tensor[offset]);
+			}
+			printf("] ");
+		}
+		printf("\n");
+	}
+}
+
+
