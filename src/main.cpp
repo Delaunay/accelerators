@@ -1,5 +1,6 @@
 #include <miopen/miopen.h>
 #include <cstdio>
+#include <sstream>
 
 #define hipDeviceMalloc hipMalloc
 #define hipDeviceFree hipFree
@@ -44,27 +45,47 @@ void check(miopenStatus_t error, const char* file, const char* fun, int line, co
 
 void print_tensor(float* tensor, miopenTensorDescriptor_t desc, int batch_id);
 
-int main(){
+int main(int argc, const char* argv[]){
+	int w = 8;
+	int h = 8;
+	int in_c = 3;
+
+	for(int i = 0; i < argc; ++i){
+		auto str = std::string(argv[i]);
+		std::stringstream ss;
+		ss << argv[i + 1];
+
+		if (str == "-w"){
+			ss >> w;
+			i += 1;
+		} else if (str == "-h"){
+			ss >> h;
+			i += 1;
+		} else if (str == "-c"){
+			ss >> in_c;
+			i += 1;
+		} 
+	}
+
+	printf("w=%d h=%d\n", w, h);
+
 	// Runtime
 	int device_count = 0;
 	CHK(hipGetDeviceCount(&device_count));
 	
 	printf("Device Count: %d\n", device_count);
-	CHK(hipSetDevice(0));
-	
-	int w = 8;
-	int h = 8;
+	CHK(hipSetDevice(0));	
 
 	// Allocate memory for our tensors
 	float* tensor_hx = nullptr;
 	float* tensor_dx = nullptr;
-	size_t size_x = 32 * 3 * w * h * sizeof(float);
+	size_t size_x = 32 * in_c * w * h * sizeof(float);
 	CHK(hipHostMalloc  (&tensor_hx, size_x));
 	CHK(hipDeviceMalloc(&tensor_dx, size_x));	
 
 	float* kernel_hk = nullptr;
 	float* kernel_dk = nullptr;
-	size_t size_k = 3 * 3 * 3 * sizeof(float);
+	size_t size_k = in_c * 3 * 3 * sizeof(float);
 	CHK(hipHostMalloc  (&kernel_hk, size_k));
 	CHK(hipDeviceMalloc(&kernel_dk, size_k));
 
@@ -79,13 +100,13 @@ int main(){
 
 	miopenTensorDescriptor_t desc_x;
 	CHK(miopenCreateTensorDescriptor(&desc_x));
-	CHK(miopenSet4dTensorDescriptor(desc_x, miopenFloat, 32, 3, w, h));
+	CHK(miopenSet4dTensorDescriptor(desc_x, miopenFloat, 32, in_c, w, h));
 
 	miopenTensorDescriptor_t desc_k;
 	CHK(miopenCreateTensorDescriptor(&desc_k));
 	// Output channel becomes the batch_size        
 	int out_channel = 4;
-	CHK(miopenSet4dTensorDescriptor(desc_k, miopenFloat, out_channel, 3, 3, 3));
+	CHK(miopenSet4dTensorDescriptor(desc_k, miopenFloat, out_channel, in_c, 3, 3));
 
 	// Copy Host to Device
 	CHK(hipMemcpyHtoD(tensor_dx, tensor_hx, size_x));
@@ -147,7 +168,7 @@ int main(){
 	CHK(hipDeviceMalloc(&workspace, workspace_size));
 
 	int algo_count = 0;
-	miopenConvAlgoPerf_t perf;
+	miopenConvAlgoPerf_t perf[5];
 	CHK(miopenFindConvolutionForwardAlgorithm(
 		handle,
 		desc_x, tensor_dx,
@@ -156,19 +177,19 @@ int main(){
 		desc_o, output_do,
 		1,
 		&algo_count,
-		&perf,
+		perf,
 		&workspace,
 		workspace_size,
 		true
 	));
 	// Given the best convolution algo allocate workspace
-	workspace_size = perf.memory;
+	workspace_size = perf[0].memory;
 
 	printf("Workspace Size %zu\n", workspace_size);
 	CHK(hipDeviceFree(workspace));
         CHK(hipDeviceMalloc(&workspace, workspace_size));
 
-	printf("Picked Algo %d\n", perf.fwd_algo);
+	printf("Picked Algo %d\n", perf[0].fwd_algo);
 	
 	// Execute the convolution at last
 	float alpha = 1;
@@ -179,7 +200,7 @@ int main(){
 		desc_x, tensor_dx,
 		desc_k, kernel_dk,
 		convDesc,
-		perf.fwd_algo,
+		perf[0].fwd_algo,
 		&beta,
 		desc_o, output_do,
 		workspace, workspace_size
