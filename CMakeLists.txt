@@ -1,5 +1,5 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.1)
-PROJECT(accelerators)
+PROJECT(accelerators LANGUAGES CXX C)
 
 #SET(CMAKE_RELEASE_POSTFIX "")                  # Release is the default
 #SET(CMAKE_DEBUG_POSTFIX "-debug")
@@ -16,7 +16,7 @@ SET(${CXX_STANDARD_REQUIRED} ON)
 
 ADD_SUBDIRECTORY(src)
 
-
-
+OPTION(BUILD_HIP  "Enable HIP build"  OFF)
+OPTION(BUILD_CUDA "Enable CUDA build" OFF)
 
 

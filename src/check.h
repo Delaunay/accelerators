@@ -7,6 +7,7 @@ template <typename EC>
 void check(EC error, const char *file, const char *fun, int line,
            const char *call_str) {}
 
+#if AMD
 template <>
 void check(hipError_t error, const char *file, const char *fun, int line,
            const char *call_str) {
@@ -27,6 +28,28 @@ void check(miopenStatus_t error, const char *file, const char *fun, int line,
         printf("[s] %s/%s:%d %s\n", file, fun, line, call_str);
     }
 }
+#else
+template <>
+void check(cudaError_t error, const char *file, const char *fun, int line,
+           const char *call_str) {
+    if (error != cudaSuccess) {
+        printf("[!] %s/%s:%d %s %s %s\n", file, fun, line,
+               cudaGetErrorName(error), cudaGetErrorString(error), call_str);
+    } else {
+        printf("[s] %s/%s:%d %s\n", file, fun, line, call_str);
+    };
+}
+
+template <>
+void check(cudnnStatus_t error, const char *file, const char *fun, int line,
+           const char *call_str) {
+    if (error != CUDNN_STATUS_SUCCESS) {
+        printf("[!] %s/%s:%d %d %s\n", file, fun, line, error, call_str);
+    } else {
+        printf("[s] %s/%s:%d %s\n", file, fun, line, call_str);
+    }
+}
+#endif
 
 #define CHK(X) check(X, __FILE__, __func__, __LINE__, #X)
 #endif
