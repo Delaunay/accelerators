@@ -23,8 +23,8 @@
 #define cudnnGetConvolutionForwardOutputDim(conv, idesc, fdesc, n, c, h, w)\
       cudnnGetConvolution2dForwardOutputDim(conv, idesc, fdesc, n, c, h, w)
 
-// CUDNN_CROSS_CORRELATION
-#define CONV_MODE CUDNN_CONVOLUTION
+// CUDNN_CROSS_CORRELATION CUDNN_CONVOLUTION
+#define CONV_MODE CUDNN_CROSS_CORRELATION
 
 #define cudnnSet4dTensorDescriptor(desc,                    dtype, n, c, h, w)\
         cudnnSetTensor4dDescriptor(desc, CUDNN_TENSOR_NCHW, dtype, n, c, h, w)
@@ -92,6 +92,10 @@ int main(int argc, const char *argv[]) {
 
     printf("w=%d h=%d\n", args.w, args.h);
 
+    // Create a MIOpen Handle
+    cudnnHandle_t handle;
+    CHK(cudnnCreate(&handle));
+
     // Runtime
     int device_count = 0;
     CHK(cudaGetDeviceCount(&device_count));
@@ -113,10 +117,6 @@ int main(int argc, const char *argv[]) {
 
     CHK(cudaHostMalloc(&kernel_hk, size_k));
     CHK(cudaDeviceMalloc(&kernel_dk, size_k));
-
-    // Create a MIOpen Handle
-    cudnnHandle_t handle;
-    CHK(cudnnCreate(&handle));
 
     cudnnTensorDescriptor_t desc_x;
     CHK(cudnnCreateTensorDescriptor(&desc_x));
