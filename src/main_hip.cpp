@@ -164,6 +164,8 @@ int main(int argc, const char *argv[]) {
 
     int algo_count = 1;
     miopenConvAlgoPerf_t perf;
+    perf.fwd_algo = (miopenConvFwdAlgorithm_t) -1;
+    //*
     CHK(miopenFindConvolutionForwardAlgorithm(
         handle,
         desc_x, tensor_dx,
@@ -174,9 +176,11 @@ int main(int argc, const char *argv[]) {
         &algo_count,
         &perf,
         &workspace, workspace_size, true));
-
+    //*/
     // Given the best convolution algo allocate workspace
-    workspace_size = perf.memory;
+    if (int(perf.fwd_algo) != -1){
+        workspace_size = perf.memory;
+    }
 
     printf("Workspace Size %zu\n", workspace_size);
     CHK(hipDeviceFree(workspace));
@@ -187,13 +191,18 @@ int main(int argc, const char *argv[]) {
     // Execute the convolution at last
     float alpha = 1;
     float beta = 0;
+    auto algo = miopenConvolutionFwdAlgoGEMM;
+    if (int(perf.fwd_algo) != -1){
+        algo = perf.fwd_algo;
+    }
 
+    //auto algo = miopenConvolutionFwdAlgoDirect;
     CHK(miopenConvolutionForward(
         handle, &alpha,
         desc_x, tensor_dx,
         desc_k, kernel_dk,
         convDesc,
-        perf.fwd_algo, &beta,
+        algo, &beta,
         desc_o, output_do,
         workspace, workspace_size));
 

@@ -7,7 +7,7 @@ template <typename EC>
 void check(EC error, const char *file, const char *fun, int line,
            const char *call_str) {}
 
-#if AMD
+#if defined(__HCC__)
 template <>
 void check(hipError_t error, const char *file, const char *fun, int line,
            const char *call_str) {
@@ -28,7 +28,7 @@ void check(miopenStatus_t error, const char *file, const char *fun, int line,
         printf("[s] %s/%s:%d %s\n", file, fun, line, call_str);
     }
 }
-#else
+#elif defined(__CUDACC__)
 template <>
 void check(cudaError_t error, const char *file, const char *fun, int line,
            const char *call_str) {
@@ -53,3 +53,4 @@ void check(cudnnStatus_t error, const char *file, const char *fun, int line,
 
 #define CHK(X) check(X, __FILE__, __func__, __LINE__, #X)
 #endif
+
