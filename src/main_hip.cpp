@@ -3,11 +3,15 @@
 #include <miopen/miopen.h>
 #include <sstream>
 
+/*
 #if __has_include("check.h")
 #   include "check.h"
 #else
 #   define CHK(X)
 #endif
+*/
+
+#define CHK(X) X
 
 #define hipDeviceMalloc hipMalloc
 #define hipDeviceFree hipFree
