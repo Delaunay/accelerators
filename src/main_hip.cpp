@@ -3,15 +3,15 @@
 #include <miopen/miopen.h>
 #include <sstream>
 
-/*
+//*
 #if __has_include("check.h")
 #   include "check.h"
 #else
 #   define CHK(X)
 #endif
-*/
+//*/
 
-#define CHK(X) X
+//#define CHK(X) X
 
 #define hipDeviceMalloc hipMalloc
 #define hipDeviceFree hipFree
@@ -69,7 +69,7 @@ int main(int argc, const char *argv[]) {
     CHK(hipGetDeviceCount(&device_count));
 
     printf("Device Count: %d\n", device_count);
-    CHK(hipSetDevice(0));
+    CHK(hipSetDevice(1));
 
     // Allocate memory for our tensors
     float *tensor_hx = nullptr;
@@ -81,7 +81,7 @@ int main(int argc, const char *argv[]) {
 
     float *kernel_hk = nullptr;
     float *kernel_dk = nullptr;
-    size_t size_k = args.in_c * args.kernel_w * args.kernel_w * sizeof(float);
+    size_t size_k = args.out_channel * args.in_c * args.kernel_w * args.kernel_w * sizeof(float);
 
     CHK(hipHostMalloc(&kernel_hk, size_k));
     CHK(hipDeviceMalloc(&kernel_dk, size_k));
@@ -121,6 +121,8 @@ int main(int argc, const char *argv[]) {
     // Make a convolution
     miopenConvolutionDescriptor_t convDesc;
     CHK(miopenCreateConvolutionDescriptor(&convDesc));
+    
+    /*
     CHK(miopenInitConvolutionDescriptor(convDesc,
                                         miopenConvolution, // mode
                                         0,                 // pad_h
@@ -130,15 +132,46 @@ int main(int argc, const char *argv[]) {
                                         1,                 // dilatation_h
                                         1                  // dilatation_w
                                         ));
+    //*/
+    
+    //*
+    int pad[] = {0, 0};
+    int stride[] = {1, 1};
+    int dil[] = {1, 1};
+
+    CHK(miopenInitConvolutionNdDescriptor(convDesc,
+                                          2,
+                                          pad, 
+                                          stride, 
+                                          dil,
+                                          miopenConvolution
+    ));
+    //*/
 
     int on = 0, oc = 0, oh = 0, ow = 0;
+    CHK(miopenSetConvolutionGroupCount(convDesc, 1));
+
     // Make Output Tensor
+    /*
     CHK(miopenGetConvolutionForwardOutputDim(
             convDesc,
             desc_x,
             desc_k,
             &on, &oc, &oh, &ow));
+    /*/
+    int nDim;
+    int outDim[] = {0, 0, 0, 0};
+    CHK(miopenGetConvolutionNdForwardOutputDim(
+            convDesc,
+            desc_x,
+            desc_k,
+            &nDim, 
+            outDim));
 
+    on = outDim[0];
+    oc = outDim[1];
+    oh = outDim[2];
+    ow = outDim[3];
     printf("Output: (n: %d, c: %d, h: %d, w: %d)\n", on, oc, oh, ow);
 
     float *output_ho = nullptr;
@@ -166,9 +199,9 @@ int main(int argc, const char *argv[]) {
     float *workspace = nullptr;
     CHK(hipDeviceMalloc(&workspace, workspace_size));
 
-    int algo_count = 1;
-    miopenConvAlgoPerf_t perf;
-    perf.fwd_algo = (miopenConvFwdAlgorithm_t) -1;
+    int algo_count = 0;
+    miopenConvAlgoPerf_t perf[2];
+    perf[0].fwd_algo = (miopenConvFwdAlgorithm_t) 1;
     //*
     CHK(miopenFindConvolutionForwardAlgorithm(
         handle,
@@ -176,28 +209,28 @@ int main(int argc, const char *argv[]) {
         desc_k, kernel_dk,
         convDesc,
         desc_o, output_do,
-        1,
+        2,
         &algo_count,
-        &perf,
-        &workspace, workspace_size, true));
+        perf,
+        workspace, workspace_size, false));
     //*/
     // Given the best convolution algo allocate workspace
-    if (int(perf.fwd_algo) != -1){
-        workspace_size = perf.memory;
+    if (int(perf[0].fwd_algo) != -1){
+        workspace_size = perf[0].memory;
     }
 
     printf("Workspace Size %zu\n", workspace_size);
     CHK(hipDeviceFree(workspace));
     CHK(hipDeviceMalloc(&workspace, workspace_size));
 
-    printf("Picked Algo %d\n", perf.fwd_algo);
+    printf("Picked Algo %d\n", perf[0].fwd_algo);
 
     // Execute the convolution at last
     float alpha = 1;
     float beta = 0;
     auto algo = miopenConvolutionFwdAlgoGEMM;
-    if (int(perf.fwd_algo) != -1){
-        algo = perf.fwd_algo;
+    if (int(perf[0].fwd_algo) != -1){
+        algo = perf[0].fwd_algo;
     }
 
     //auto algo = miopenConvolutionFwdAlgoDirect;
